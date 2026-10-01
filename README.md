@@ -5,7 +5,7 @@ para a classe auxiliar GerenciadorSalas e para as próximas classes auxiliares
 
  * GerenciadorFilmes: classe auxiliar responsável pelo gerenciamento dos filmes no catálogo
 
- - "__ini__(self)" inicializa a classe e contém um atributo chamado "self.__filmes = []" que é uma lista de todos os filmes do catálogo; 
+ - "__init__(self)" inicializa a classe e contém um atributo chamado "self.__filmes = []" que é uma lista de todos os filmes do catálogo; 
     os filmes na lista devem ser da classe Filme
  - "get_filme_by_id(self, id: int)" é um método que retorna um filme que contém o id inserido no parâmetro, caso o filme não seja encontrado, retorna False
  - "adicionar_filme(self, id: int, titulo: str, duracao: str, genero: str, sinopse: str)" é um método que cria um filme contendo todos os seus atributos, e caso o filme
