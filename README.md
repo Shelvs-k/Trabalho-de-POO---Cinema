@@ -17,7 +17,7 @@ para a classe auxiliar GerenciadorSalas e para as próximas classes auxiliares
 
  * GerenciadorSalas: classe auxiliar responsável pelo gerenciamento das salas do cinema
 
- - "__ini__(self)" inicializa a classe e contém um atributo chamado "self.__salas = []" que é uma lista de todas as salas do cinema; 
+ - "__init__(self)" inicializa a classe e contém um atributo chamado "self.__salas = []" que é uma lista de todas as salas do cinema; 
     as salas na lista devem ser da classe Sala
  - "get_sala_by_num(self, num: int)" é um método que retorna uma sala que contém o número inserido no parâmetro, caso a sala não seja encontrada, retorna False
  - "adicionar_sala(self, num: int, cap: int, ocup: int = 0)" é um método que cria uma sala contendo todos os seus atributos, e caso a sala não exista na lista de salas, 
@@ -29,7 +29,7 @@ para a classe auxiliar GerenciadorSalas e para as próximas classes auxiliares
 
  * GerenciadorSessoes: classe auxiliar responsável pelo gerenciamento das sessões do cinema
 
- - "__ini__(self)" inicializa a classe e contém um atributo chamado "self.__sessoes = []" que é uma lista de todas as sessões do cinema; 
+ - "__init__(self)" inicializa a classe e contém um atributo chamado "self.__sessoes = []" que é uma lista de todas as sessões do cinema; 
     as sessões na lista devem ser da classe Sessao
  - "get_sessao_by_id(self, id: int)" é um método que retorna uma sessão que contém o id inserido no parâmetro, caso a sessão não seja encontrada, retorna False
  - "criar_sessao(self, id: int, filme: Filme, sala: Sala, data: str, horario: str, preco: float, assentos: int = 0)" é um método que cria uma sessão contendo todos os seus 
