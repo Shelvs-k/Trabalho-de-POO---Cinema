@@ -1,5 +1,3 @@
-from math import sin
-
 from classes import Filme, Sala, Sessao, Cliente, Ingresso
 
 class GerenciadorFilmes: #Gerencia tudo relacionado aos filmes do cinema
