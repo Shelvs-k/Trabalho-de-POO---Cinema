@@ -1,13 +1,16 @@
 class Ingresso:
-    def __init__(self, id, p, l, t, q):
+    def __init__(self, id, p, l, t, q, cliente=None, sessao=None):
         self.id_ingresso = id
         self.preco = p
         self.poltrona = l
         self.tipo = t
         self.quant = q
+        self.cliente = cliente
+        self.sessao = sessao
 
 class Cliente:
-    def __init__(self, n, i):
+    def __init__(self, n, i, id=None):
+        self.id = id
         self.nome = n
         self.idade = i
         self.ingressos = []
