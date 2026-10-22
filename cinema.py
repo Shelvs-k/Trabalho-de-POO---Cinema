@@ -1,4 +1,18 @@
-from builtins import input
+import os
+from pathlib import Path
+
+import pygame
+
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
+
+try:
+    import música
+except ImportError:
+    música = None
+
 from gerenciador import (
     list_filmes, add_filme, info_filme, aparatar_filmes,
     list_salas, add_sala, info_sala, aparatar_salas,
@@ -6,17 +20,15 @@ from gerenciador import (
     list_clientes, add_cliente, info_cliente, aparatar_clientes,
     list_ingressos, add_ingresso, info_ingresso, aparatar_ingressos,
 )
-import os
-from pathlib import Path
-import keyboard
-import pygame
 
 
 def limpar_tela():
-    os.system('cls' if os.name == 'nt' else 'clear')
+    os.system("cls" if os.name == "nt" else "clear")
+
 
 def pausa():
     input("Pressione Enter para continuar...")
+
 
 def executar_menu(titulo, itens):
     acoes = {str(indice): acao for indice, (_, acao) in enumerate(itens, start=1)}
@@ -26,12 +38,23 @@ def executar_menu(titulo, itens):
         print(f"========= {titulo} =========")
         for indice, (rotulo, _) in enumerate(itens, start=1):
             print(f"{indice} — {rotulo}")
+
+        print("M — Músicas")
         print("0 — Voltar")
 
-        opcao = input("Escolha uma opção: ").strip()
+        opcao = input("Escolha uma opção: ").strip().lower()
 
         if opcao == "0":
             return
+
+        if opcao.lower() == "m":
+            if música is None:
+                print("Falha ao acessar o sistema de músicas.")
+                pausa()
+                continue
+
+            música.main()
+            continue
 
         acao = acoes.get(opcao)
 
@@ -43,6 +66,7 @@ def executar_menu(titulo, itens):
         limpar_tela()
         acao()
         pausa()
+
 
 def main():
     menus = {
@@ -83,15 +107,20 @@ def main():
         print("========= Sistema de Cinema =========")
         for chave, (titulo, _) in menus.items():
             print(f"{chave} — {titulo}")
+        print("M — Músicas")
         print("0 — Sair")
 
-        opcao = input("Escolha uma opção: ").strip()
+        opcao = input("Escolha uma opção: ").strip().lower()
 
         if opcao == "0":
             limpar_tela()
             print("Saindo do sistema...")
             pausa()
             return
+
+        if opcao == "m":
+            música.main()
+            continue
 
         if opcao in menus:
             titulo, itens = menus[opcao]
@@ -111,18 +140,13 @@ def ItsLeviOsa_not_LeviosAR():
         if pygame.mixer.music.get_busy():
             return
 
-        audio = (
-            Path(__file__).resolve().parent
-            / "secrets"
-            / "Ultra_Secret.mp3"
-        )
+        audio = Path(__file__).resolve().parent / "secrets" / "Ultra_Secret.mp3"
 
         pygame.mixer.music.load(str(audio))
         pygame.mixer.music.play()
 
     except (pygame.error, OSError) as erro:
         print(f"Erro ao reproduzir o easter egg: {erro}")
-
 
 
 def parar_easter_egg():
@@ -135,25 +159,21 @@ def parar_easter_egg():
         print(f"Erro ao parar o easter egg: {erro}")
 
 
-
 def registrar_atalhos():
+    if keyboard is None:
+        print("A biblioteca 'keyboard' não está instalada. Atalhos desativados.")
+        print("Para instalar: pip install keyboard")
+        pausa()
+        return False
+
     try:
-        keyboard.add_hotkey(
-            "alt+h+p",
-            ItsLeviOsa_not_LeviosAR,
-            suppress=True
-        )
-
-        keyboard.add_hotkey(
-            "alt+h+s",
-            parar_easter_egg,
-            suppress=True
-        )
-
+        keyboard.add_hotkey("alt+h+p", ItsLeviOsa_not_LeviosAR, suppress=True)
+        keyboard.add_hotkey("alt+h+s", parar_easter_egg, suppress=True)
         return True
 
     except (ImportError, OSError) as erro:
         print(f"Atalhos de teclado indisponíveis: {erro}")
+        pausa()
         return False
 
 
