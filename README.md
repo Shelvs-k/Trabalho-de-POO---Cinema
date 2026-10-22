@@ -148,6 +148,14 @@ Arquivos JSON
 (Armazenamento persistente)
 ```
 
+### `debug.py` — Depuração e testes
+
+É o módulo responsável por ativar o modo de depuração do sistema, extremamente útil para realizar testes e registrar falhas. Os registros ficam em logs em um pasta chamada "logs", que é gerada automaticamente ao ativar o modo debug
+
+Contém a funcionalidade:
+
+- Ativar debug: ativa o modo de depuração para começar a registrar o log (usado em cinema.py)
+
 ## 💾 Persistência de dados
 
 Diferentemente de uma implementação que mantém todos os registros somente na memória durante a execução, este projeto utiliza arquivos JSON para armazenar os dados.
@@ -227,6 +235,61 @@ Execute o programa a partir da raiz do repositório e verifique se os arquivos J
 ### O áudio ou os atalhos de teclado não funcionam
 
 Verifique se as dependências estão instaladas e se o arquivo de áudio está no caminho esperado. O funcionamento dos atalhos também pode depender do sistema operacional e das permissões disponíveis.
+
+## 🐞 Sistema de Debug e Logs
+
+O projeto possui um sistema de logs para facilitar a identificação de erros e o acompanhamento das operações executadas durante o uso da aplicação.
+
+### Como ativar
+
+1. Execute o sistema normalmente:
+
+   ```bash
+   python cinema.py
+   ```
+
+2. No menu principal, digite `debug` para ativar o sistema de debug.
+3. No Windows, o sistema abre um segundo terminal dedicado ao monitoramento dos registros em tempo real.
+
+### Níveis de registro
+
+Os registros utilizam os níveis do módulo `logging` do Python:
+
+- **`DEBUG`**: detalhes técnicos úteis para investigar o comportamento interno.
+- **`INFO`**: operações realizadas com sucesso e eventos normais relevantes.
+- **`WARNING`**: situações inesperadas que não impedem necessariamente a execução.
+- **`ERROR`**: falhas que impedem uma operação específica.
+- **`CRITICAL`**: problemas extremamente graves que podem comprometer o funcionamento do sistema.
+- **`exception()`**: método usado dentro de blocos `except` para registrar uma falha junto com o traceback. Por padrão, esse registro tem nível `ERROR`.
+
+### Onde os registros são exibidos
+
+- **Terminal principal:** exibe registros a partir do nível `INFO`.
+- **Segundo terminal:** acompanha o arquivo de log em tempo real e diferencia os níveis por cores.
+- **Arquivos de log:** são salvos na pasta `logs/`, com nome baseado na data e no horário da execução. O arquivo registra mensagens a partir do nível `DEBUG` e inclui a localização do código em avisos e erros.
+
+Exemplo da estrutura gerada:
+
+```text
+logs/
+└── cinema_DD-MM-AAAA_HH-MM-SS.log
+```
+
+A pasta `logs/` e os arquivos `.log` são gerados durante a execução e não precisam ser versionados no Git.
+
+### Como adicionar novos registros
+
+Ao implementar uma nova função ou alterar uma existente, avalie quais eventos precisam ser registrados. Use a função `registrar_log(nivel, mensagem)` nos módulos que a disponibilizam.
+
+Exemplos:
+
+```python
+registrar_log("debug", "Iniciando a busca por um filme.")
+registrar_log("info", "Filme cadastrado com sucesso.")
+registrar_log("warning", "O filme solicitado não foi encontrado.")
+```
+
+Dentro de um bloco `except`, use `registrar_log("exception", "...")` quando o traceback ajudar a investigar a falha. Registre o sucesso somente depois que a operação tiver sido concluída e evite mensagens repetitivas em funções chamadas por outras funções que já registram o mesmo evento.
 
 ## 👥 Desenvolvimento em equipe
 

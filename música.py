@@ -2,6 +2,15 @@ import os
 import time
 from pathlib import Path
 import pygame
+import debug
+
+def registrar_log(nivel, mensagem):
+    """Registra um evento somente quando o modo debug está ativo."""
+    if not debug.log_ativo:
+        return
+
+    metodo = getattr(debug.logger, nivel)
+    metodo(mensagem, stacklevel=2)
 
 # ============================ UTILITÁRIOS ============================ #
 
@@ -9,45 +18,114 @@ MUSIC_EXTENSIONS = {".mp3", ".wav", ".flac", ".aac", ".ogg"}
 MUSIC_DIRECTORY = Path(__file__).parent / "music"
 
 
+
 def initialize_audio():
     if not pygame.mixer.get_init():
-        pygame.mixer.init()
+        registrar_log("debug", "Inicializando mixer do Pygame.")
+        try:
+            pygame.mixer.init()
+        except pygame.error:
+            registrar_log(
+                "exception",
+                "Falha ao inicializar o mixer do Pygame."
+            )
+            raise
+        registrar_log(
+            "debug",
+            "Mixer do Pygame inicializado com sucesso."
+        )
+
 
 
 def create_music_directory(directory):
     path = Path(directory)
-
     if path.exists() and not path.is_dir():
-        raise NotADirectoryError(f"'{directory}' is not a directory.")
-
-    path.mkdir(parents=True, exist_ok=True)
+        registrar_log(
+            "error",
+            f"Falha ao criar diretório de músicas: "
+            f"{path} não é um diretório."
+        )
+        raise NotADirectoryError(
+            f"'{path}' is not a directory."
+        )
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        registrar_log(
+            "exception",
+            f"Não foi possível criar ou acessar o diretório: {path}"
+        )
+        raise
+    registrar_log(
+        "debug",
+        f"Diretório de músicas verificado: {path}"
+    )
     return path
 
 
 def list_music_files(directory):
     path = Path(directory)
-
-    if not path.is_dir():
-        return []
-
-    return sorted(
-        (
-            file for file in path.rglob("*")
-            if file.is_file() and file.suffix.lower() in MUSIC_EXTENSIONS
-        ),
-        key=lambda file: str(file).lower(),
+    registrar_log(
+        "debug",
+        f"Iniciando listagem de músicas em: {path}"
     )
+    if not path.is_dir():
+        registrar_log(
+            "warning",
+            f"Listagem cancelada: {path} não é um diretório."
+        )
+        return []
+    try:
+        music_files = sorted(
+            (
+                file for file in path.rglob("*")
+                if file.is_file()
+                and file.suffix.lower() in MUSIC_EXTENSIONS
+            ),
+            key=lambda file: str(file).lower(),
+        )
+        registrar_log(
+            "info",
+            f"Listagem concluída: {len(music_files)} "
+            f"arquivo(s) de música encontrado(s)."
+        )
+        return music_files
+    except OSError:
+        registrar_log(
+            "exception",
+            f"Falha ao listar músicas no diretório: {path}"
+        )
+        raise
 
 
 def play_music(file_path, loop=True):
+    registrar_log(
+        "debug",
+        f"Tentando reproduzir: {file_path}"
+    )
     initialize_audio()
     pygame.mixer.music.load(str(file_path))
     pygame.mixer.music.play(-1 if loop else 0)
+    registrar_log(
+        "info",
+        f"Música iniciada: {file_path.name}. "
+        f"Loop: {'ativado' if loop else 'desativado'}."
+    )
+
 
 
 def stop_music():
     if pygame.mixer.get_init():
         pygame.mixer.music.stop()
+        registrar_log(
+            "info",
+            "Reprodução da música interrompida."
+        )
+    else:
+        registrar_log(
+            "debug",
+            "Solicitação de parada ignorada: mixer não inicializado."
+        )
 
 
 def limpar_terminal():
@@ -64,10 +142,9 @@ def pause():
 def main():
     music_directory = create_music_directory(MUSIC_DIRECTORY)
     tocando_agora = None
-
+    registrar_log("info", "Reprodutor de músicas iniciado")
     while True:
         limpar_terminal()
-
         print("#====================================#")
         print("| BEM-VINDO AO REPRODUTOR DE MÚSICA! |")
         print("|====================================|")
@@ -129,7 +206,14 @@ def main():
             tocando_agora = musica_selecionada.name
             print(f"\nTocando em loop: {tocando_agora}")
         except pygame.error as erro:
-            print(f"\nNão foi possível reproduzir o arquivo: {erro}")
+            registrar_log(
+                "exception",
+                f"Falha ao reproduzir "
+                f"{musica_selecionada.name}: {erro}"
+            )
+            print(
+                f"\nNão foi possível reproduzir o arquivo: {erro}"
+            )
 
         pause()
 
