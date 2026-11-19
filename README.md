@@ -88,7 +88,7 @@ O arquivo `requirements.txt` reúne as bibliotecas externas necessárias para a 
 Com as dependências instaladas, execute o arquivo principal a partir da raiz do repositório:
 
 ```bash
-python cinema.py
+python src/cinema.py
 ```
 
 O programa apresentará o menu principal no terminal. Utilize as opções exibidas para acessar as operações de gerenciamento disponíveis.
@@ -97,7 +97,7 @@ O programa apresentará o menu principal no terminal. Utilize as opções exibid
 
 O código está organizado em três módulos principais, cada um com uma responsabilidade específica.
 
-### `classes.py` — Modelos de dados
+### `src/classes.py` — Modelos de dados
 
 Define as classes que representam as entidades do sistema:
 
@@ -109,7 +109,7 @@ Define as classes que representam as entidades do sistema:
 
 Essas classes estruturam os dados utilizados pelo sistema, representando os objetos manipulados pelas operações de gerenciamento.
 
-### `gerenciador.py` — Gerenciamento e persistência
+### `src/gerente.py` — Gerenciamento e persistência
 
 Concentra as funções responsáveis pelas operações sobre as entidades do sistema. Entre suas responsabilidades estão:
 
@@ -121,9 +121,9 @@ Concentra as funções responsáveis pelas operações sobre as entidades do sis
 
 Esse módulo conecta os modelos de dados ao armazenamento em arquivos.
 
-### `cinema.py` — Interface e execução
+### `src/cinema.py` — Interface e execução
 
-É o ponto de entrada da aplicação. Esse módulo organiza os menus apresentados ao usuário, recebe as escolhas realizadas no terminal e chama as funções correspondentes do módulo `gerenciador.py`.
+É o ponto de entrada da aplicação. Esse módulo organiza os menus apresentados ao usuário, recebe as escolhas realizadas no terminal e chama as funções correspondentes do módulo `src/gerente.py`.
 
 Também contém as funcionalidades extras relacionadas aos atalhos de teclado e à reprodução de áudio.
 
@@ -133,14 +133,14 @@ Também contém as funcionalidades extras relacionadas aos atalhos de teclado e 
 Usuário
    |
    v
-cinema.py
+src/cinema.py
 (Menu e interação)
    |
    v
-gerenciador.py
+src/gerente.py
 (Operações e persistência)
    |
-   +------> classes.py
+   +------> src/classes.py
    |        (Modelos de dados)
    |
    v
@@ -148,13 +148,13 @@ Arquivos JSON
 (Armazenamento persistente)
 ```
 
-### `debug.py` — Depuração e testes
+### `src/debug.py` — Depuração e testes
 
 É o módulo responsável por ativar o modo de depuração do sistema, extremamente útil para realizar testes e registrar falhas. Os registros ficam em logs em um pasta chamada "logs", que é gerada automaticamente ao ativar o modo debug
 
 Contém a funcionalidade:
 
-- Ativar debug: ativa o modo de depuração para começar a registrar o log (usado em cinema.py)
+- Ativar debug: ativa o modo de depuração para começar a registrar o log (usado em src/cinema.py)
 
 ## 💾 Persistência de dados
 
@@ -189,7 +189,7 @@ dados/
 
 O conteúdo de cada arquivo representa os dados de um registro em formato JSON.
 
-O módulo `gerenciador.py` contém as funções responsáveis por localizar, ler, criar e organizar esses arquivos. Os diretórios necessários também são criados automaticamente quando a aplicação é inicializada.
+O módulo src/gerente.py contém as funções responsáveis por localizar, ler, criar e organizar esses arquivos. Os diretórios necessários também são criados automaticamente quando a aplicação é inicializada.
 
 **Importante:** os arquivos JSON fazem parte do funcionamento do sistema. Caso os dados precisem ser preservados, não exclua a pasta `dados/` sem antes manter uma cópia dos registros.
 
@@ -197,19 +197,31 @@ O módulo `gerenciador.py` contém as funções responsáveis por localizar, ler
 
 ```text
 Trabalho-de-POO---Cinema/
-├── cinema.py
-├── classes.py
-├── gerenciador.py
-├── requirements.txt
-├── instalar_dependencias.bat
+│
+├── src/
+│   ├── cinema.py
+│   ├── classes.py
+│   ├── gerente.py
+│   └── debug.py
+│
+├── docs/
+│   ├── Arquitetura.md
+│   └── Persistência.md
+│
 ├── dados/
 │   ├── Filmes/
 │   ├── Salas/
 │   ├── Clientes/
 │   ├── Sessoes/
 │   └── Ingressos/
-└── secrets/
-    └── Ultra_Secret.mp3
+│
+├── segredos/
+│   ├── README.md
+│   └── Ultra_Secret.mp3
+│
+├── requirements.txt
+├── instalar_dependencias.bat
+└── README.md
 ```
 
 A estrutura acima representa a organização geral do projeto. Os arquivos JSON são criados e modificados conforme as operações realizadas, e alguns diretórios podem ser gerados automaticamente durante a execução.
@@ -245,7 +257,7 @@ O projeto possui um sistema de logs para facilitar a identificação de erros e 
 1. Execute o sistema normalmente:
 
    ```bash
-   python cinema.py
+   python src/cinema.py
    ```
 
 2. No menu principal, digite `debug` para ativar o sistema de debug.
