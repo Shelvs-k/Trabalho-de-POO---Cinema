@@ -1,16 +1,13 @@
-
 # =================== Importações ====================== #
 
 import os
-from unittest import registerResult
-
-from numpy import quantile
 
 from classes import Filme, Sala, Sessao, Cliente, Ingresso
 from pathlib import Path
 import json
 import re
 import debug
+
 
 def registrar_log(nivel, mensagem):
     """Registra um evento somente quando o modo debug está ativo."""
@@ -170,6 +167,26 @@ def ler_json(caminho):
         return None
 
 
+def possui_sessao(campo, identificador):
+    """Verifica se existem sessões vinculadas a um filme ou sala."""
+    registrar_log("debug", "Verificando sessões vinculadas.")
+
+    try:
+        arquivos = listar_arquivos(sessao_bucket)
+    except OSError:
+        return None
+
+    for arquivo in arquivos:
+        dados = ler_json(arquivo)
+
+        if dados is None:
+            return None
+
+        if str(dados.get(campo, "")) == str(identificador):
+            return True
+
+    return False
+
 
 def nome_seguro(nome):
     """Remove caracteres que podem causar problemas no nome do arquivo."""
@@ -320,6 +337,21 @@ def aparatar_filmes():
         )
         return
 
+    resultado = possui_sessao("filme_id", identificador)
+
+    if resultado is None:
+        print("Não foi possível verificar as sessões. Filme não excluído.")
+        registrar_log("error", "Exclusão de filme cancelada: falha na verificação.")
+        return
+
+    if resultado:
+        print("Não é possível excluir: existem sessões vinculadas a este filme.")
+        registrar_log(
+            "warning",
+            f"Exclusão de filme cancelada: ID {identificador} possui sessões vinculadas."
+        )
+        return
+
     try:
         caminho.unlink()
         print(f"Filme com ID {identificador} excluído com sucesso.")
@@ -456,6 +488,21 @@ def aparatar_salas():
         registrar_log(
         "warning",
         f"Tentativa de excluir sala inexistente. Número informado: '{numero}'."
+        )
+        return
+
+    resultado = possui_sessao("sala_numero", numero)
+
+    if resultado is None:
+        print("Não foi possível verificar as sessões. Sala não excluída.")
+        registrar_log("error", "Exclusão de sala cancelada: falha na verificação.")
+        return
+
+    if resultado:
+        print("Não é possível excluir: existem sessões vinculadas a esta sala.")
+        registrar_log(
+            "warning",
+            f"Exclusão de sala cancelada: número {numero} possui sessões vinculadas."
         )
         return
 
@@ -1500,4 +1547,4 @@ def aparatar_ingressos():
 if __name__ == "__main__":
     print("Gerenciador de filmes e salas.")
     print("Módulo carregado sem executar cadastros automaticamente.")
-    # Chame as funções necessárias aqui ou no menu principal.
+    # Chame as funções necessárias aqui ou no menu principal.   
