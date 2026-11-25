@@ -19,7 +19,9 @@ from gerenciador import (
     list_filmes, add_filme, info_filme, aparatar_filmes,
     list_salas, add_sala, info_sala, aparatar_salas,
     list_sessoes, add_sessao, info_sessao, aparatar_sessoes,
+    editar_sessao, ver_disponibilidade_sessao,
     list_clientes, add_cliente, info_cliente, aparatar_clientes,
+    editar_cliente, ver_historico_cliente,
     list_ingressos, add_ingresso, info_ingresso, aparatar_ingressos,
 )
 
@@ -111,20 +113,24 @@ def main():
         "3": ("Sessões", [
             ("Cadastrar Sessão", add_sessao),
             ("Listar Sessões", list_sessoes),
+            ("Ver disponibilidade da sessão", ver_disponibilidade_sessao),
             ("Informações da Sessão", info_sessao),
+            ("Editar Sessão", editar_sessao),
             ("Excluir Sessão", aparatar_sessoes),
         ]),
         "4": ("Clientes", [
             ("Cadastrar Cliente", add_cliente),
             ("Listar Clientes", list_clientes),
             ("Informações do Cliente", info_cliente),
+            ("Ver histórico de ingressos", ver_historico_cliente),
+            ("Editar Cliente", editar_cliente),
             ("Excluir Cliente", aparatar_clientes),
         ]),
         "5": ("Ingressos", [
             ("Cadastrar Ingresso", add_ingresso),
             ("Listar Ingressos", list_ingressos),
             ("Informações do Ingresso", info_ingresso),
-            ("Excluir Ingresso", aparatar_ingressos),
+            ("Cancelar ingresso", aparatar_ingressos),
         ]),
     }
 

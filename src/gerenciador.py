@@ -1,8 +1,13 @@
 # =================== Importações ====================== #
 
 import os
+from datetime import datetime
 
-from classes import Filme, Sala, Sessao, Cliente, Ingresso
+from classes import (
+    Filme, Sala, Sessao, Cliente, Ingresso,
+    ClassificacaoIndicativa,
+    TipoSessao, StatusSessao, TipoIngresso, IngressoError,
+)
 from pathlib import Path
 import json
 import re
@@ -13,9 +18,9 @@ def registrar_log(nivel, mensagem):
     """Registra um evento somente quando o modo debug está ativo."""
     if not debug.log_ativo:
         return
-
     metodo = getattr(debug.logger, nivel)
     metodo(mensagem, stacklevel=2)
+
 
 # ====================================================== #
 # ============= AVISO DE CÓDIGO PROVISÓRIO ============= #
@@ -27,8 +32,8 @@ def aviso():
         "Ele serve apenas para fins de teste do menu principal. Use com cautela e não o considere como versão final do sistema.\n"
     )
     input("Pressione Enter para continuar...")
-    
     os.system('cls' if os.name == 'nt' else 'clear')
+
 
 # ====================================================== #
 # ============== GERENCIAMENTO DE ARQUIVOS ============= #
@@ -76,7 +81,6 @@ def listar_arquivos(bucket):
         f"Arquivos JSON válidos encontrados em {bucket}: {len(arquivos)}."
     )
     return arquivos
-
 
 
 def buscar_arquivo(bucket, identificador):
@@ -151,6 +155,8 @@ def salvar_json(caminho, dados):
 
 def ler_json(caminho):
     """Lê um JSON e informa erros de arquivo ou conteúdo."""
+    if caminho is None:
+        return None
     registrar_log("debug", f"Lendo arquivo JSON: {caminho.name}")
     try:
         with caminho.open("r", encoding="utf-8") as arquivo:
@@ -164,6 +170,39 @@ def ler_json(caminho):
             "exception",
             f"Falha ao ler arquivo JSON: {caminho.name}"
         )
+        return None
+
+
+def carregar_filme(identificador):
+    """Carrega um filme do JSON e o reconstrói como objeto Filme."""
+    caminho = buscar_arquivo(filme_bucket, identificador)
+
+    if caminho is None:
+        return None
+
+    dados = ler_json(caminho)
+
+    if not isinstance(dados, dict):
+        return None
+
+    try:
+        classificacao = ClassificacaoIndicativa(dados["classificacao"])
+
+        return Filme(
+            dados["id"],
+            dados["titulo"],
+            dados["duracao"],
+            dados["genero"],
+            dados["sinopse"],
+            classificacao
+        )
+
+    except (KeyError, ValueError, TypeError) as erro:
+        registrar_log(
+            "exception",
+            f"Falha ao reconstruir filme do arquivo {caminho.name}: {erro}"
+        )
+        print(f"Não foi possível carregar o filme: {erro}")
         return None
 
 
@@ -202,7 +241,6 @@ def nome_seguro(nome):
     return nome
 
 
-
 def ler_numero(mensagem, tipo, minimo):
     """Lê um número, rejeitando valores inválidos."""
     while True:
@@ -225,6 +263,86 @@ def ler_numero(mensagem, tipo, minimo):
                 "warning",
                 "Entrada numérica inválida: conversão para o tipo solicitado falhou."
             )
+
+
+# ====================================================== #
+# ===== SERIALIZAÇÃO DE SESSÃO E INGRESSO =============== #
+# As classes novas (Sessao, Ingresso) não têm to_dict/from_dict.
+# Por isso a serialização é feita aqui.
+#
+# WORKAROUND: _sessao_from_dict e _ingresso_from_dict usam
+# __new__ + atributos internos (_Sessao__id_sessao, _Ingresso__id, ...)
+# porque os __init__ geram id automático e também vendem o ingresso.
+# ====================================================== #
+
+def _sessao_to_dict(sessao, sala):
+    return {
+        "id_sessao": sessao.id_sessao,
+        "filme_id": sessao.filme.id_filme,
+        "sala_numero": sessao.sala.get_numero(),
+        "data_hora": sessao.data_hora.strftime("%d/%m/%Y %H:%M"),
+        "tipo": int(sessao.tipo),
+        "preco": sessao.preco,
+        "status": int(sessao.status),
+        "assentos_ocupados": _mapa_assentos(sessao, sala),
+    }
+
+
+def _sessao_from_dict(dados, filme, sala):
+    """Reconstrói Sessao sem gerar id novo. WORKAROUND."""
+    sessao = Sessao.__new__(Sessao)
+    sessao._Sessao__id_sessao = dados["id_sessao"]
+    sessao._Sessao__filme = filme
+    sessao._Sessao__sala = sala
+    sessao._Sessao__data_hora = datetime.strptime(
+        dados["data_hora"], "%d/%m/%Y %H:%M"
+    )
+    sessao._Sessao__tipo = TipoSessao(dados["tipo"])
+    sessao._Sessao__preco = float(dados["preco"])
+    sessao._Sessao__status = StatusSessao(dados["status"])
+
+    for numero in dados.get("assentos_ocupados", []):
+        try:
+            sala.ocupar_assento(sessao.id_sessao, numero)
+        except ValueError:
+            pass
+    return sessao
+
+
+def _ingresso_to_dict(ingresso):
+    return {
+        "id_ingresso": ingresso.id_ingresso,
+        "preco": ingresso.valor,
+        "poltrona": ingresso.numero_assento,
+        "tipo": "inteira" if ingresso.tipo == TipoIngresso.INTEIRA else "meia",
+        "cliente_id": ingresso.cliente.id,
+        "sessao_id": ingresso.sessao.id_sessao,
+    }
+
+
+def _ingresso_from_dict(dados, sessao, cliente):
+    """Reconstrói Ingresso SEM vender de novo. WORKAROUND."""
+    ingresso = Ingresso.__new__(Ingresso)
+    ingresso._Ingresso__id = dados["id_ingresso"]
+    ingresso._Ingresso__sessao = sessao
+    ingresso._Ingresso__cliente = cliente
+    ingresso._Ingresso__assento = dados["poltrona"]
+    ingresso._Ingresso__tipo = (
+        TipoIngresso.INTEIRA if dados["tipo"] == "inteira"
+        else TipoIngresso.MEIA
+    )
+    ingresso._Ingresso__valor = float(dados["preco"])
+    ingresso._Ingresso__cancelado = False
+    return ingresso
+
+
+def _mapa_assentos(sessao, sala):
+    """Devolve a lista de números de assento ocupados nesta sessão."""
+    ocupados = []
+    for numero in range(1, sala.get_capacidade() + 1):
+        if not sala.assento_disponivel(sessao.id_sessao, numero):
+            ocupados.append(numero)
+    return ocupados
 
 
 # ====================================================== #
@@ -252,10 +370,9 @@ def list_filmes():
             quantidade += 1
 
     registrar_log(
-    "info",
-    f"Listagem de filmes concluída. Registros exibidos: {quantidade}."
+        "info",
+        f"Listagem de filmes concluída. Registros exibidos: {quantidade}."
     )
-
 
 
 def add_filme():
@@ -286,16 +403,32 @@ def add_filme():
         )
         return
 
+    print("\nClassificações indicativas:")
+    print("0 - Livre")
+    print("10 - 10 anos")
+    print("12 - 12 anos")
+    print("14 - 14 anos")
+    print("16 - 16 anos")
+    print("18 - 18 anos")
+
+    try:
+        idade = int(input("Digite a classificação indicativa: "))
+        classificacao = ClassificacaoIndicativa(idade)
+    except ValueError:
+        print("Classificação indicativa inválida.")
+        return
+
     identificador = proximo_id(filme_bucket)
 
-    filme = Filme(identificador, titulo, duracao, genero, sinopse)
+    filme = Filme(identificador, titulo, duracao, genero, sinopse, classificacao)
 
     dados = {
         "id": identificador,
         "titulo": titulo,
         "duracao": duracao,
         "genero": genero,
-        "sinopse": sinopse
+        "sinopse": sinopse,
+        "classificacao": classificacao.value
     }
 
     caminho = (
@@ -318,7 +451,6 @@ def add_filme():
             "exception",
             f"Falha ao salvar filme: ID {identificador}, título '{titulo}'."
         )
-
 
 
 def aparatar_filmes():
@@ -368,7 +500,6 @@ def aparatar_filmes():
         )
 
 
-
 def info_filme():
     """Exibe os detalhes de um filme pelo ID."""
     registrar_log("debug", "Iniciando consulta de detalhes de filme.")
@@ -401,11 +532,13 @@ def info_filme():
     print(f"Duração: {dados.get('duracao', 'Não informada')} minutos")
     print(f"Gênero: {dados.get('genero', 'Não informado')}")
     print(f"Sinopse: {dados.get('sinopse', 'Não informada')}")
+    print(f"Classificação: {dados.get('classificacao', 'Não informada')} anos")
 
     registrar_log(
         "info",
         f"Detalhes do filme consultados com sucesso: ID {identificador}."
     )
+
 
 # ====================================================== #
 # ================ GERENCIAMENTO DE SALAS ============== #
@@ -439,7 +572,7 @@ def list_salas():
 
 def add_sala():
     aviso()
-    """Cadastra uma sala com todos os assentos inicialmente livres."""
+    """Cadastra uma sala."""
     registrar_log("debug", "Iniciando cadastro de sala.")
     capacidade = ler_numero(
         "Digite a capacidade da sala: ",
@@ -449,12 +582,16 @@ def add_sala():
 
     numero = proximo_id(sala_bucket)
 
-    sala = Sala(numero, capacidade, [False] * capacidade)
+    try:
+        sala = Sala(numero, capacidade)
+    except ValueError as erro:
+        print(f"Não foi possível cadastrar a sala: {erro}")
+        registrar_log("warning", f"Sala inválida: {erro}")
+        return
 
     dados = {
-        "numero": sala.numero,
-        "capacidade": sala.capacidade,
-        "assentos_ocupados": sala.assentos_ocupados
+        "numero": sala.get_numero(),
+        "capacidade": sala.get_capacidade(),
     }
 
     caminho = sala_bucket / f"{numero} - Sala.json"
@@ -462,8 +599,8 @@ def add_sala():
     try:
         salvar_json(caminho, dados)
         registrar_log(
-        "info",
-        f"Sala cadastrada com sucesso: Número {numero}, capacidade: {capacidade}"
+            "info",
+            f"Sala cadastrada com sucesso: Número {numero}, capacidade: {capacidade}"
         )
         print(f"Sala {numero} cadastrada com sucesso.")
 
@@ -486,8 +623,8 @@ def aparatar_salas():
     if caminho is None:
         print(f"Sala de número {numero} não encontrada.")
         registrar_log(
-        "warning",
-        f"Tentativa de excluir sala inexistente. Número informado: '{numero}'."
+            "warning",
+            f"Tentativa de excluir sala inexistente. Número informado: '{numero}'."
         )
         return
 
@@ -516,8 +653,8 @@ def aparatar_salas():
     except OSError as erro:
         print(f"Não foi possível excluir a sala: {erro}")
         registrar_log(
-        "exception",
-        f"Falha ao excluir sala: Número {numero}"
+            "exception",
+            f"Falha ao excluir sala: Número {numero}"
         )
 
 
@@ -550,12 +687,12 @@ def info_sala():
 
     print(f"\nNúmero: {dados.get('numero', '?')}")
     print(f"Capacidade: {dados.get('capacidade', '?')}")
-    print(f"Assentos ocupados: {dados.get('assentos_ocupados', [])}")
 
     registrar_log(
         "info",
         f"Detalhes da sala consultados com sucesso: Número {numero}."
     )
+
 
 # ====================================================== #
 # ============== GERENCIAMENTO DE SESSÕES ============== #
@@ -572,8 +709,8 @@ def list_sessoes():
     if not arquivos:
         print("Nenhuma sessão cadastrada.")
         registrar_log(
-        "warning",
-        "Tentativa de listar sessões sem nenhum cadastro."
+            "warning",
+            "Tentativa de listar sessões sem nenhum cadastro."
         )
         return
 
@@ -583,166 +720,132 @@ def list_sessoes():
         dados = ler_json(arquivo)
 
         if dados is not None:
+            try:
+                tipo = TipoSessao(dados["tipo"]).descricao
+                status = StatusSessao(dados["status"]).descricao
+            except (KeyError, ValueError):
+                tipo, status = "?", "?"
             print(
                 f"ID: {dados.get('id_sessao', '?')} | "
                 f"Filme: {dados.get('filme_id', '?')} | "
                 f"Sala: {dados.get('sala_numero', '?')} | "
-                f"Data: {dados.get('data', '?')} | "
-                f"Horário: {dados.get('horario', '?')}"
+                f"Data/Hora: {dados.get('data_hora', '?')} | "
+                f"Tipo: {tipo} | Status: {status}"
             )
             quantidade += 1
     registrar_log(
-    "info",
-    f"Listagem de sessões concluída. Registros exibidos: {quantidade}."
+        "info",
+        f"Listagem de sessões concluída. Registros exibidos: {quantidade}."
     )
 
 
 def add_sessao():
-    """Cadastra uma sessão vinculada a um filme e a uma sala."""
+    """Cadastra uma sessão usando a nova Sessao."""
     registrar_log("debug", "Iniciando cadastro de sessão.")
     list_filmes()
     filme_id = input("Digite o ID do filme: ").strip()
-    caminho_filme = buscar_arquivo(filme_bucket, filme_id)
-
-    if caminho_filme is None:
-        print(f"Filme com ID {filme_id} não encontrado.")
-        registrar_log(
-            "warning",
-            f"Cadastro de sessão cancelado: filme ID {filme_id} não encontrado."
-        )
-        return
-
-    filme = ler_json(caminho_filme)
-
+    filme = carregar_filme(filme_id)
     if filme is None:
-        registrar_log(
-        "error",
-        f"Cadastro de sessão cancelado: não foi possível ler o filme ID {filme_id}."
-        )
+        print(f"Filme com ID {filme_id} não encontrado.")
+        registrar_log("warning", f"Cadastro cancelado: filme {filme_id} não encontrado.")
         return
 
     list_salas()
     sala_numero = input("Digite o número da sala: ").strip()
-    caminho_sala = buscar_arquivo(sala_bucket, sala_numero)
-
-    if caminho_sala is None:
-        print(f"Sala de número {sala_numero} não encontrada.")
-        registrar_log(
-        "warning",
-        f"Cadastro de sessão cancelado: sala número {sala_numero} não encontrada."
-        )
+    dados_sala = ler_json(buscar_arquivo(sala_bucket, sala_numero))
+    if dados_sala is None:
+        print(f"Sala {sala_numero} não encontrada.")
+        registrar_log("warning", f"Cadastro cancelado: sala {sala_numero} não encontrada.")
+        return
+    try:
+        sala = Sala(dados_sala["numero"], dados_sala["capacidade"])
+    except (KeyError, ValueError, TypeError) as erro:
+        print(f"Sala inválida: {erro}")
         return
 
-    sala = ler_json(caminho_sala)
-
-    if sala is None:
-        registrar_log(
-        "error",
-        f"Cadastro de sessão cancelado: não foi possível ler a sala ID {sala_numero}."
-        )
+    data_str = input("Data e hora (dd/mm/aaaa hh:mm): ").strip()
+    try:
+        data_hora = datetime.strptime(data_str, "%d/%m/%Y %H:%M")
+    except ValueError:
+        print("Data/hora inválida. Use o formato dd/mm/aaaa hh:mm.")
+        registrar_log("warning", "Cadastro cancelado: data/hora inválida.")
         return
 
-    data = input("Digite a data da sessão: ").strip()
-    horario = input("Digite o horário da sessão: ").strip()
+    print("\nTipo: 1 — 3D | 2 — 2D | 3 — Assistiva")
+    tipo = input("Escolha: ").strip()
+    if tipo not in ("1", "2", "3"):
+        print("Tipo inválido.")
+        return
+
+    print("\nStatus: 1 — Em Breve | 2 — Em Progresso | 3 — Concluída")
+    status = input("Escolha: ").strip()
+    if status not in ("1", "2", "3"):
+        print("Status inválido.")
+        return
+
     preco = ler_numero("Digite o preço do ingresso: ", float, 0.01)
 
-    if not data or not horario:
-        print("A data e o horário não podem ficar vazios.")
-        registrar_log(
-        "warning",
-        f"Cadastro de sessão cancelado: a data e o horário não podem ficar vazios."
+    try:
+        sessao = Sessao(
+            filme=filme,
+            sala=sala,
+            data_hora=data_hora,
+            tipo=int(tipo),
+            preco=preco,
+            status=int(status),
         )
+    except (ValueError, TypeError) as erro:
+        print(f"Não foi possível criar a sessão: {erro}")
+        registrar_log("warning", f"Sessão inválida: {erro}")
         return
 
-    identificador = proximo_id(sessao_bucket)
-
-    sessao = Sessao(
-        identificador,
-        filme_id,
-        sala_numero,
-        data,
-        horario,
-        preco,
-        [False] * sala["capacidade"]
-    )
-
-    dados = {
-        "id_sessao": sessao.id_sessao,
-        "filme_id": filme["id"],
-        "sala_numero": sala["numero"],
-        "data": sessao.data,
-        "horario": sessao.horario,
-        "preco": sessao.preco,
-        "assentos_ocupados": sessao.assentos_ocupados
-    }
-
+    identificador = sessao.id_sessao
     caminho = sessao_bucket / f"{identificador} - Sessao.json"
-
     try:
-        salvar_json(caminho, dados)
+        salvar_json(caminho, _sessao_to_dict(sessao, sala))
         print(f"Sessão {identificador} cadastrada com sucesso.")
-        registrar_log(
-        "info",
-        f"Sessão {identificador} cadastrada com sucesso."
-        )
-
+        registrar_log("info", f"Sessão {identificador} cadastrada.")
     except OSError as erro:
         print(f"Não foi possível salvar a sessão: {erro}")
-        registrar_log(
-        "exception",
-        f"Falha ao salvar sessão: ID {identificador}."
-        )
+        registrar_log("exception", f"Falha ao salvar sessão: {identificador}.")
 
 
 def info_sessao():
     """Exibe os detalhes de uma sessão pelo ID."""
     registrar_log("debug", "Iniciando consulta de detalhes de sessão.")
     list_sessoes()
-    identificador = input(
-        "Digite o ID da sessão que deseja consultar: "
-    ).strip()
-
-    caminho = buscar_arquivo(sessao_bucket, identificador)
-
-    if caminho is None:
-        print(f"Sessão com ID {identificador} não encontrada.")
-        registrar_log(
-            "warning",
-            f"Consulta de sessão inexistente. ID informado: '{identificador}'."
-        )
-        return
-
-    dados = ler_json(caminho)
-
+    identificador = input("Digite o ID da sessão: ").strip()
+    dados = ler_json(buscar_arquivo(sessao_bucket, identificador))
     if dados is None:
-        registrar_log(
-            "error",
-            f"Não foi possível exibir os detalhes da sessão de ID {identificador}."
-        )
+        print("Sessão não encontrada.")
         return
 
-    caminho_filme = buscar_arquivo(filme_bucket, dados["filme_id"])
-    caminho_sala = buscar_arquivo(sala_bucket, dados["sala_numero"])
+    filme = carregar_filme(dados["filme_id"])
+    if filme is None:
+        print("Filme vinculado não encontrado.")
+        return
 
-    filme = ler_json(caminho_filme) if caminho_filme else None
-    sala = ler_json(caminho_sala) if caminho_sala else None
+    dados_sala = ler_json(buscar_arquivo(sala_bucket, dados["sala_numero"]))
+    if dados_sala is None:
+        print("Sala vinculada não encontrada.")
+        return
+    sala = Sala(dados_sala["numero"], dados_sala["capacidade"])
 
-    assentos = dados.get("assentos_ocupados", [])
-    ocupados = sum(assento is True for assento in assentos)
+    sessao = _sessao_from_dict(dados, filme, sala)
+    try:
+        tipo = sessao.tipo.descricao
+        status = sessao.status.descricao
+    except Exception:
+        tipo, status = "?", "?"
 
-    print(f"\nID: {dados.get('id_sessao', '?')}")
-    print(
-        f"Filme: {filme.get('titulo', 'Não encontrado')}"
-        if filme else "Filme: Não encontrado"
-    )
-    print(
-        f"Sala: {sala.get('numero', 'Não encontrada')}"
-        if sala else "Sala: Não encontrada"
-    )
-    print(f"Data: {dados.get('data', 'Não informada')}")
-    print(f"Horário: {dados.get('horario', 'Não informado')}")
-    print(f"Preço: R$ {dados.get('preco', 0):.2f}")
-    print(f"Assentos ocupados: {ocupados}/{len(assentos)}")
+    print(f"\nID: {sessao.id_sessao}")
+    print(f"Filme: {filme.titulo}")
+    print(f"Sala: {sala.get_numero()}")
+    print(f"Data/Hora: {sessao.data_hora:%d/%m/%Y %H:%M}")
+    print(f"Tipo: {tipo}")
+    print(f"Preço: R$ {sessao.preco:.2f}")
+    print(f"Status: {status}")
+    print(f"Assentos disponíveis: {sessao.quantidade_assentos_disponiveis()}/{sala.get_capacidade()}")
     registrar_log(
         "info",
         f"Detalhes da sessão consultados com sucesso: ID {identificador}."
@@ -750,7 +853,7 @@ def info_sessao():
 
 
 def editar_sessao():
-    """Edita a data, o horário e o preço de uma sessão."""
+    """Edita a data/hora, o preço e o status de uma sessão."""
     registrar_log("debug", "Iniciando edição de sessão.")
     list_sessoes()
     identificador = input(
@@ -778,15 +881,21 @@ def editar_sessao():
 
     print("Pressione Enter para manter o valor atual.")
 
-    data = input(f"Data [{dados['data']}]: ").strip()
-    horario = input(f"Horário [{dados['horario']}]: ").strip()
+    data_str = input(f"Data/hora [{dados.get('data_hora', '?')}]: ").strip()
     preco = input(f"Preço [{dados['preco']}]: ").strip()
+    status_str = input(f"Status [{dados.get('status', '?')}]: ").strip()
 
-    if data:
-        dados["data"] = data
-
-    if horario:
-        dados["horario"] = horario
+    if data_str:
+        try:
+            datetime.strptime(data_str, "%d/%m/%Y %H:%M")
+            dados["data_hora"] = data_str
+        except ValueError:
+            print("Data/hora inválida.")
+            registrar_log(
+                "warning",
+                f"Edição de sessão cancelada: data/hora inválida para ID {identificador}."
+            )
+            return
 
     if preco:
         try:
@@ -809,6 +918,12 @@ def editar_sessao():
                 f"Edição de sessão cancelada: preço inválido para ID {identificador}."
             )
             return
+
+    if status_str:
+        if status_str not in ("1", "2", "3"):
+            print("Status inválido.")
+            return
+        dados["status"] = int(status_str)
 
     try:
         caminho.write_text(
@@ -856,7 +971,7 @@ def aparatar_sessoes():
         )
         return
 
-    if any(dados.get("assentos_ocupados", [])):
+    if dados.get("assentos_ocupados"):
         print("Não é possível excluir uma sessão com assentos ocupados.")
         registrar_log(
             "warning",
@@ -878,6 +993,35 @@ def aparatar_sessoes():
             "exception",
             f"Falha ao excluir sessão: ID {identificador}."
         )
+
+
+def ver_disponibilidade_sessao():
+    """Mostra a disponibilidade de assentos de uma sessão."""
+    registrar_log("debug", "Consulta de disponibilidade.")
+    list_sessoes()
+    identificador = input("ID da sessão: ").strip()
+    dados = ler_json(buscar_arquivo(sessao_bucket, identificador))
+    if dados is None:
+        print("Sessão não encontrada.")
+        return
+
+    dados_sala = ler_json(buscar_arquivo(sala_bucket, dados["sala_numero"]))
+    if dados_sala is None:
+        print("Sala vinculada não encontrada.")
+        return
+    sala = Sala(dados_sala["numero"], dados_sala["capacidade"])
+
+    ocupados = dados.get("assentos_ocupados", [])
+    print(f"\nSessão {identificador} — Sala {sala.get_numero()}")
+    print(f"Capacidade: {sala.get_capacidade()}")
+    print(f"Ocupados: {len(ocupados)}")
+    print(f"Disponíveis: {sala.get_capacidade() - len(ocupados)}")
+    print("\nMapa (X = ocupado, . = livre):")
+    for numero in range(1, sala.get_capacidade() + 1):
+        marcador = "X" if numero in ocupados else "."
+        print(f"{numero:>3}: {marcador}", end="   ")
+        if numero % 5 == 0:
+            print()
 
 
 # ====================================================== #
@@ -905,7 +1049,8 @@ def list_clientes():
             print(
                 f"ID: {dados.get('id', '?')} | "
                 f"Nome: {dados.get('nome', 'Não informado')} | "
-                f"Idade: {dados.get('idade', '?')}"
+                f"Idade: {dados.get('idade', '?')} | "
+                f"E-mail: {dados.get('email', 'Não informado')}"
             )
             quantidade += 1
 
@@ -927,16 +1072,17 @@ def add_cliente():
         return
 
     idade = ler_numero("Digite a idade do cliente: ", int, 0)
+    email = input("Digite o e-mail do cliente: ").strip()
     identificador = proximo_id(cliente_bucket)
 
-    cliente = Cliente(nome, idade, identificador)
+    cliente = Cliente(identificador, nome, idade, email)
 
     dados = {
         "id": cliente.id,
         "nome": cliente.nome,
         "idade": cliente.idade,
+        "email": cliente.email,
         "ingressos": [],
-        "validacao": cliente.validacao
     }
 
     caminho = (
@@ -994,6 +1140,7 @@ def info_cliente():
     print(f"\nID: {dados.get('id', '?')}")
     print(f"Nome: {dados.get('nome', 'Não informado')}")
     print(f"Idade: {dados.get('idade', '?')}")
+    print(f"E-mail: {dados.get('email', 'Não informado')}")
     print(f"Ingressos: {dados.get('ingressos', [])}")
     registrar_log(
         "info",
@@ -1002,7 +1149,7 @@ def info_cliente():
 
 
 def editar_cliente():
-    """Edita o nome e a idade de um cliente."""
+    """Edita o nome, a idade e o e-mail de um cliente."""
     registrar_log("debug", "Iniciando edição de cliente.")
     list_clientes()
 
@@ -1037,8 +1184,15 @@ def editar_cliente():
         f"Idade [{dados['idade']}]: "
     ).strip()
 
+    email = input(
+        f"E-mail [{dados.get('email', 'Não informado')}]: "
+    ).strip()
+
     if nome:
         dados["nome"] = nome
+
+    if email:
+        dados["email"] = email
 
     if idade:
         try:
@@ -1154,6 +1308,43 @@ def aparatar_clientes():
         )
 
 
+def ver_historico_cliente():
+    """Exibe o histórico de ingressos de um cliente."""
+    registrar_log("debug", "Histórico de cliente.")
+    list_clientes()
+    identificador = input("ID do cliente: ").strip()
+    dados = ler_json(buscar_arquivo(cliente_bucket, identificador))
+    if dados is None:
+        print("Cliente não encontrado.")
+        return
+
+    ids = dados.get("ingressos", [])
+    if not ids:
+        print("\nNenhum ingresso comprado.")
+        return
+
+    print(f"\n>>> HISTÓRICO DE INGRESSOS — {dados['nome']} <<<\n")
+    for id_ing in ids:
+        dados_ing = ler_json(buscar_arquivo(ingresso_bucket, id_ing))
+        if dados_ing is None:
+            continue
+        dados_sessao = ler_json(buscar_arquivo(sessao_bucket, dados_ing["sessao_id"]))
+        if dados_sessao is None:
+            continue
+        dados_filme = ler_json(buscar_arquivo(filme_bucket, dados_sessao["filme_id"]))
+        if dados_filme is None:
+            continue
+        tipo = "Inteira" if dados_ing["tipo"] == "inteira" else "Meia"
+        print(
+            f"Ingresso #{dados_ing['id_ingresso']} | "
+            f"{dados_filme['titulo']} | "
+            f"{dados_sessao['data_hora']} | "
+            f"Sala {dados_sessao['sala_numero']} | "
+            f"Assento {dados_ing['poltrona']} | "
+            f"{tipo} | R$ {dados_ing['preco']:.2f}"
+        )
+
+
 # ====================================================== #
 # ============== GERENCIAMENTO DE INGRESSOS ============= #
 
@@ -1181,6 +1372,7 @@ def list_ingressos():
                 f"Cliente: {dados.get('cliente_id', '?')} | "
                 f"Sessão: {dados.get('sessao_id', '?')} | "
                 f"Poltrona: {dados.get('poltrona', '?')} | "
+                f"Tipo: {dados.get('tipo', '?')} | "
                 f"Preço: R$ {dados.get('preco', 0):.2f}"
             )
             quantidade += 1
@@ -1192,192 +1384,86 @@ def list_ingressos():
 
 
 def add_ingresso():
-    """Emite um ingresso e atualiza a ocupação da sessão."""
+    """Emite um ingresso usando a nova Ingresso (que já vende no __init__)."""
     registrar_log("debug", "Iniciando emissão de ingresso.")
     list_clientes()
-
-    cliente_id = input(
-        "Digite o ID do cliente: "
-    ).strip()
-
-    caminho_cliente = buscar_arquivo(cliente_bucket, cliente_id)
-
-    if caminho_cliente is None:
-        print(f"Cliente com ID {cliente_id} não encontrado.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: cliente ID {cliente_id} não encontrado."
-        )
+    cliente_id = input("Digite o ID do cliente: ").strip()
+    dados_cliente = ler_json(buscar_arquivo(cliente_bucket, cliente_id))
+    if dados_cliente is None:
+        print("Cliente não encontrado.")
         return
-
-    cliente = ler_json(caminho_cliente)
-
-    if cliente is None:
-        registrar_log(
-            "error",
-            f"Emissão de ingresso cancelada: não foi possível ler o cliente ID {cliente_id}."
-        )
-        return
+    cliente = Cliente(
+        dados_cliente["id"], dados_cliente["nome"],
+        dados_cliente["idade"], dados_cliente["email"]
+    )
 
     list_sessoes()
-
-    sessao_id = input(
-        "Digite o ID da sessão: "
-    ).strip()
-
-    caminho_sessao = buscar_arquivo(sessao_bucket, sessao_id)
-
-    if caminho_sessao is None:
-        print(f"Sessão com ID {sessao_id} não encontrada.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: sessão ID {sessao_id} não encontrada."
-        )
+    sessao_id = input("Digite o ID da sessão: ").strip()
+    dados_sessao = ler_json(buscar_arquivo(sessao_bucket, sessao_id))
+    if dados_sessao is None:
+        print("Sessão não encontrada.")
         return
 
-    sessao = ler_json(caminho_sessao)
-
-    if sessao is None:
-        registrar_log(
-            "error",
-            f"Emissão de ingresso cancelada: não foi possível ler a sessão ID {sessao_id}."
-        )
+    filme = carregar_filme(dados_sessao["filme_id"])
+    if filme is None:
+        print("Filme da sessão não encontrado.")
         return
 
-    assentos = sessao.get("assentos_ocupados", [])
-
-    if not assentos or all(assentos):
-        print("A sessão está lotada.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: sessão ID {sessao_id} lotada."
-        )
+    dados_sala = ler_json(buscar_arquivo(sala_bucket, dados_sessao["sala_numero"]))
+    if dados_sala is None:
+        print("Sala da sessão não encontrada.")
         return
+    sala = Sala(dados_sala["numero"], dados_sala["capacidade"])
+
+    sessao = _sessao_from_dict(dados_sessao, filme, sala)
 
     poltrona = ler_numero(
-        f"Digite a poltrona desejada (1 a {len(assentos)}): ",
-        int,
-        1
+        f"Digite a poltrona (1 a {sala.get_capacidade()}): ", int, 1
     )
 
-    if poltrona > len(assentos):
-        print("Poltrona inexistente nessa sessão.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: poltrona {poltrona} inexistente na sessão ID {sessao_id}."
-        )
+    print("\nTipo: 1 — Inteira | 2 — Meia")
+    tipo = input("Escolha: ").strip()
+    if tipo not in ("1", "2"):
+        print("Tipo inválido.")
         return
-
-    indice = poltrona - 1
-
-    if assentos[indice]:
-        print("Essa poltrona já está ocupada.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: poltrona {poltrona} já ocupada na sessão ID {sessao_id}."
-        )
-        return
-
-    ingressos_existentes = listar_arquivos(ingresso_bucket)
-
-    for arquivo in ingressos_existentes:
-        ingresso_existente = ler_json(arquivo)
-
-        if ingresso_existente is None:
-            continue
-
-        mesma_sessao = (
-            str(ingresso_existente.get("sessao_id"))
-            == str(sessao["id_sessao"])
-        )
-
-        mesma_poltrona = (
-            ingresso_existente.get("poltrona") == poltrona
-        )
-
-        if mesma_sessao and mesma_poltrona:
-            print("Já existe um ingresso para essa poltrona.")
-            registrar_log(
-                "warning",
-                f"Emissão de ingresso cancelada: já existe ingresso para poltrona {poltrona} na sessão ID {sessao_id}."
-            )
-            return
-
-    tipo = input(
-        "Tipo do ingresso (inteira/meia): "
-    ).strip().lower()
-
-    if tipo not in ("inteira", "meia"):
-        print("Tipo inválido. Digite 'inteira' ou 'meia'.")
-        registrar_log(
-            "warning",
-            f"Emissão de ingresso cancelada: tipo '{tipo}' inválido."
-        )
-        return
-
-    preco = float(sessao["preco"])
-
-    if tipo == "meia":
-        preco /= 2
-
-    identificador = proximo_id(ingresso_bucket)
-
-    ingresso = Ingresso(
-        identificador,
-        preco,
-        poltrona,
-        tipo,
-        1,
-        cliente["id"],
-        sessao["id_sessao"]
-    )
-
-    dados_ingresso = {
-        "id_ingresso": ingresso.id_ingresso,
-        "preco": ingresso.preco,
-        "poltrona": ingresso.poltrona,
-        "tipo": ingresso.tipo,
-        "quant": 1,
-        "cliente_id": cliente["id"],
-        "sessao_id": sessao["id_sessao"]
-    }
-
-    sessao["assentos_ocupados"][indice] = True
-    cliente.setdefault("ingressos", []).append(identificador)
-
-    caminho_ingresso = (
-        ingresso_bucket / f"{identificador} - Ingresso.json"
-    )
 
     try:
-        salvar_json(caminho_ingresso, dados_ingresso)
+        ingresso = Ingresso(sessao, cliente, poltrona, int(tipo))
+    except IngressoError as erro:
+        print(f"Não foi possível emitir: {erro}")
+        registrar_log("warning", f"Ingresso recusado: {erro}")
+        return
 
-        caminho_sessao.write_text(
-            json.dumps(sessao, ensure_ascii=False, indent=4),
-            encoding="utf-8"
+    identificador = proximo_id(ingresso_bucket)
+    ingresso._Ingresso__id = identificador
+
+    caminho = ingresso_bucket / f"{identificador} - Ingresso.json"
+    try:
+        salvar_json(caminho, _ingresso_to_dict(ingresso))
+
+        dados_sessao["assentos_ocupados"] = _mapa_assentos(sessao, sala)
+        (sessao_bucket / f"{sessao_id} - Sessao.json").write_text(
+            json.dumps(dados_sessao, ensure_ascii=False, indent=4),
+            encoding="utf-8",
         )
 
-        caminho_cliente.write_text(
-            json.dumps(cliente, ensure_ascii=False, indent=4),
-            encoding="utf-8"
+        dados_cliente.setdefault("ingressos", []).append(identificador)
+        (cliente_bucket / f"{cliente_id} - {nome_seguro(dados_cliente['nome'])}.json").write_text(
+            json.dumps(dados_cliente, ensure_ascii=False, indent=4),
+            encoding="utf-8",
         )
 
         print(f"Ingresso {identificador} emitido com sucesso.")
-        print(f"Cliente: {cliente['nome']}")
-        print(f"Sessão: {sessao['id_sessao']}")
+        print(f"Cliente: {cliente.nome}")
+        print(f"Sessão: {sessao_id}")
         print(f"Poltrona: {poltrona}")
-        print(f"Preço: R$ {preco:.2f}")
-        registrar_log(
-            "info",
-            f"Ingresso emitido com sucesso: ID {identificador}, cliente {cliente_id}, sessão {sessao_id}, poltrona {poltrona}."
-        )
-
+        tipo_str = "Inteira" if ingresso.tipo == TipoIngresso.INTEIRA else "Meia"
+        print(f"Tipo: {tipo_str}")
+        print(f"Preço: R$ {ingresso.valor:.2f}")
+        registrar_log("info", f"Ingresso {identificador} emitido.")
     except OSError as erro:
-        print(f"Não foi possível concluir a emissão: {erro}")
-        registrar_log(
-            "exception",
-            f"Falha ao emitir ingresso: ID {identificador}, cliente {cliente_id}, sessão {sessao_id}."
-        )
+        print(f"Não foi possível salvar: {erro}")
+        registrar_log("exception", f"Falha ao emitir ingresso: {identificador}.")
 
 
 def info_ingresso():
@@ -1441,105 +1527,70 @@ def info_ingresso():
 
 
 def aparatar_ingressos():
-    """Cancela um ingresso e libera a poltrona da sessão."""
+    """Cancela um ingresso via ingresso.cancelar() (libera o assento)."""
     registrar_log("debug", "Iniciando cancelamento de ingresso.")
     list_ingressos()
+    identificador = input("Digite o ID do ingresso: ").strip()
+    dados = ler_json(buscar_arquivo(ingresso_bucket, identificador))
+    if dados is None:
+        print("Ingresso não encontrado.")
+        return
 
-    identificador = input(
-        "Digite o ID do ingresso que deseja cancelar: "
-    ).strip()
+    dados_sessao = ler_json(buscar_arquivo(sessao_bucket, dados["sessao_id"]))
+    dados_cliente = ler_json(buscar_arquivo(cliente_bucket, dados["cliente_id"]))
+    if dados_sessao is None or dados_cliente is None:
+        print("Dados vinculados não encontrados.")
+        return
 
-    caminho_ingresso = buscar_arquivo(
-        ingresso_bucket,
-        identificador
+    filme = carregar_filme(dados_sessao["filme_id"])
+    if filme is None:
+        print("Filme vinculado não encontrado.")
+        return
+
+    dados_sala = ler_json(buscar_arquivo(sala_bucket, dados_sessao["sala_numero"]))
+    if dados_sala is None:
+        print("Sala vinculada não encontrada.")
+        return
+    sala = Sala(dados_sala["numero"], dados_sala["capacidade"])
+
+    sessao = _sessao_from_dict(dados_sessao, filme, sala)
+    cliente = Cliente(
+        dados_cliente["id"], dados_cliente["nome"],
+        dados_cliente["idade"], dados_cliente["email"]
     )
-
-    if caminho_ingresso is None:
-        print(f"Ingresso com ID {identificador} não encontrado.")
-        registrar_log(
-            "warning",
-            f"Cancelamento de ingresso inexistente. ID informado: '{identificador}'."
-        )
-        return
-
-    ingresso = ler_json(caminho_ingresso)
-
-    if ingresso is None:
-        registrar_log(
-            "error",
-            f"Cancelamento de ingresso interrompido: não foi possível ler o ID {identificador}."
-        )
-        return
-
-    caminho_sessao = buscar_arquivo(
-        sessao_bucket,
-        ingresso["sessao_id"]
-    )
-
-    caminho_cliente = buscar_arquivo(
-        cliente_bucket,
-        ingresso["cliente_id"]
-    )
-
-    sessao = ler_json(caminho_sessao) if caminho_sessao else None
-    cliente = ler_json(caminho_cliente) if caminho_cliente else None
-
-    if sessao is None:
-        print("A sessão vinculada não foi encontrada.")
-        registrar_log(
-            "error",
-            f"Cancelamento de ingresso interrompido: sessão vinculada não encontrada para o ID {identificador}."
-        )
-        return
-
-    poltrona = ingresso["poltrona"]
-    indice = poltrona - 1
-    assentos = sessao.get("assentos_ocupados", [])
-
-    if indice < 0 or indice >= len(assentos):
-        print("A poltrona registrada no ingresso é inválida.")
-        registrar_log(
-            "error",
-            f"Cancelamento de ingresso interrompido: poltrona inválida no ID {identificador}."
-        )
-        return
-
-    assentos[indice] = False
-
-    if cliente is not None:
-        cliente["ingressos"] = [
-            ingresso_id
-            for ingresso_id in cliente.get("ingressos", [])
-            if str(ingresso_id) != str(ingresso["id_ingresso"])
-        ]
+    ingresso = _ingresso_from_dict(dados, sessao, cliente)
 
     try:
-        caminho_sessao.write_text(
-            json.dumps(sessao, ensure_ascii=False, indent=4),
-            encoding="utf-8"
+        ingresso.cancelar()
+    except IngressoError as erro:
+        print(f"Não foi possível cancelar: {erro}")
+        registrar_log("warning", f"Cancelamento recusado: {erro}")
+        return
+
+    try:
+        dados_sessao["assentos_ocupados"] = _mapa_assentos(sessao, sala)
+        (sessao_bucket / f"{dados['sessao_id']} - Sessao.json").write_text(
+            json.dumps(dados_sessao, ensure_ascii=False, indent=4),
+            encoding="utf-8",
         )
 
-        if cliente is not None:
-            caminho_cliente.write_text(
-                json.dumps(cliente, ensure_ascii=False, indent=4),
-                encoding="utf-8"
-            )
+        dados_cliente["ingressos"] = [
+            i for i in dados_cliente.get("ingressos", [])
+            if str(i) != str(identificador)
+        ]
+        (cliente_bucket / f"{dados['cliente_id']} - {nome_seguro(dados_cliente['nome'])}.json").write_text(
+            json.dumps(dados_cliente, ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
 
-        caminho_ingresso.unlink()
-
+        buscar_arquivo(ingresso_bucket, identificador).unlink()
         print(f"Ingresso {identificador} cancelado com sucesso.")
-        print(f"Poltrona {poltrona} liberada.")
-        registrar_log(
-            "info",
-            f"Ingresso cancelado com sucesso: ID {identificador}, poltrona {poltrona} liberada."
-        )
-
+        print(f"Poltrona liberada.")
+        registrar_log("info", f"Ingresso {identificador} cancelado.")
     except OSError as erro:
-        print(f"Não foi possível cancelar o ingresso: {erro}")
-        registrar_log(
-            "exception",
-            f"Falha ao cancelar ingresso: ID {identificador}."
-        )
+        print(f"Não foi possível salvar: {erro}")
+        registrar_log("exception", f"Falha ao cancelar ingresso: {identificador}.")
+
 
 # ====================================================== #
 # ================ PONTO DE ENTRADA ==================== #
@@ -1547,4 +1598,3 @@ def aparatar_ingressos():
 if __name__ == "__main__":
     print("Gerenciador de filmes e salas.")
     print("Módulo carregado sem executar cadastros automaticamente.")
-    # Chame as funções necessárias aqui ou no menu principal.   
