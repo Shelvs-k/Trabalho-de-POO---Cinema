@@ -15,7 +15,7 @@ try:
 except ImportError:
     música = None
 
-from gerenciador import (
+from telas import (
     list_filmes, add_filme, info_filme, aparatar_filmes,
     list_salas, add_sala, info_sala, aparatar_salas,
     list_sessoes, add_sessao, info_sessao, aparatar_sessoes,
@@ -92,7 +92,18 @@ def executar_menu(titulo, itens):
         "info",
         f"Ação selecionada no menu {titulo}: {opcao}."
         )
-        acao()
+        try:
+            acao()
+        except EOFError:
+            raise
+        except Exception as erro:
+            # Um arquivo JSON editado à mão, por exemplo, não deve derrubar
+            # o sistema inteiro: o erro é registrado e o menu continua.
+            print(f"\nOcorreu um erro inesperado: {erro!r}")
+            registrar_log(
+                "exception",
+                f"Erro inesperado na ação {opcao} do menu {titulo}: {erro!r}"
+            )
         pausa()
 
 

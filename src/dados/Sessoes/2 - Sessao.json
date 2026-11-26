@@ -1,0 +1,14 @@
+{
+    "id_sessao": 2,
+    "filme_id": 2,
+    "sala_numero": 3,
+    "data_hora": "12/12/2026 15:40",
+    "tipo": 1,
+    "preco": 34.0,
+    "status": 1,
+    "assentos_ocupados": [
+        5,
+        56,
+        95
+    ]
+}

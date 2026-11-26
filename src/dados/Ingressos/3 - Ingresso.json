@@ -1,0 +1,8 @@
+{
+    "id_ingresso": 3,
+    "preco": 17.0,
+    "poltrona": 56,
+    "tipo": "meia",
+    "cliente_id": 3,
+    "sessao_id": 2
+}

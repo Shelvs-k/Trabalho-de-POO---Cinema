@@ -503,7 +503,7 @@ class Sessao:
         preco = f"{self.__preco:.2f}".replace(".", ",")
         return (
             f"Sessão #{self.__id_sessao}\n"
-            f"Filme: {self.__filme.getTitulo()}\n"
+            f"Filme: {self.__filme.titulo}\n"
             f"Sala: {self.__sala.get_numero()}\n"
             f"Data: {self.__data_hora:%d/%m/%Y %H:%M}\n"
             f"Tipo: {self.__tipo}\n"

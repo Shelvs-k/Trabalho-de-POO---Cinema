@@ -1,0 +1,9 @@
+{
+    "id": 2,
+    "nome": "Geraldo Genro",
+    "idade": 54,
+    "email": "geraldo_g@func.firma.br",
+    "ingressos": [
+        2
+    ]
+}

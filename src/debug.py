@@ -5,19 +5,45 @@ import subprocess
 import sys
 import os
 
-import colorama
+try:
+    import colorama
+except ImportError:
+    colorama = None
 
-colorama.just_fix_windows_console()
+
+def _habilitar_cores():
+    """Ativa as cores ANSI no console do Windows.
+
+    A colorama é opcional: sem ela o sistema continua funcionando e, no
+    Windows 10 ou superior, as cores ainda costumam funcionar.
+    """
+    if colorama is None:
+        if os.name == "nt":
+            os.system("")
+        return
+
+    if hasattr(colorama, "just_fix_windows_console"):
+        colorama.just_fix_windows_console()  # colorama 0.4.6 ou superior
+    else:
+        colorama.init()
+
+
+_habilitar_cores()
 
 # --------------------------------------------------
 # 1. Formatação dos registros
 # --------------------------------------------------
 
 class LocalizacaoFormatter(logging.Formatter):
-    """Adiciona a localização aos avisos e erros."""
+    """Adiciona a localização aos avisos e erros.
 
-    def format(self, record):
-        mensagem = super().format(record)
+    A localização é acrescentada em ``formatMessage``, que roda antes de o
+    traceback ser anexado. Assim ela fica na primeira linha do registro e não
+    colada no fim do traceback.
+    """
+
+    def formatMessage(self, record):
+        mensagem = super().formatMessage(record)
 
         if record.levelno >= logging.WARNING:
             localizacao = (

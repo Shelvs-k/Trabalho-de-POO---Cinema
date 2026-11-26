@@ -1,33 +1,53 @@
+import os
 import sys
 import time
 import re
 from pathlib import Path
 
-import colorama
-from colorama import Fore, Back, Style
+try:
+    import colorama
+except ImportError:
+    colorama = None
 
-colorama.just_fix_windows_console()
+# A colorama é opcional: ela só ajuda o console do Windows a exibir as cores.
+if colorama is not None:
+    if hasattr(colorama, "just_fix_windows_console"):
+        colorama.just_fix_windows_console()  # colorama 0.4.6 ou superior
+    else:
+        colorama.init()
+elif os.name == "nt":
+    os.system("")  # habilita sequências ANSI no Windows 10 ou superior
+
+RESET = "\033[0m"
 
 CORES = {
-    "DEBUG": Fore.CYAN,
-    "INFO": Fore.GREEN,
-    "WARNING": Fore.YELLOW,
-    "ERROR": Fore.RED,
-    "CRITICAL": Back.RED + Fore.WHITE,
+    "DEBUG": "\033[36m",
+    "INFO": "\033[32m",
+    "WARNING": "\033[33m",
+    "ERROR": "\033[31m",
+    "CRITICAL": "\033[37;41m",
 }
 
+# Um registro novo começa com "data hora | NÍVEL |". Linhas que não começam
+# assim (como as de um traceback) continuam o registro anterior.
 PADRAO_NIVEL = re.compile(
-    r"\|\s*(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s*\|"
+    r"^\S+ \S+ \| (DEBUG|INFO|WARNING|ERROR|CRITICAL) \|"
 )
+
+cor_atual = ""
+
 
 def imprimir_linha_colorida(linha):
     """Aplica uma cor à linha conforme o nível do registro."""
-    resultado = PADRAO_NIVEL.search(linha)
+    global cor_atual
+
+    resultado = PADRAO_NIVEL.match(linha)
 
     if resultado:
-        nivel = resultado.group(1)
-        cor = CORES.get(nivel, "")
-        print(f"{cor}{linha.rstrip()}{Style.RESET_ALL}", flush=True)
+        cor_atual = CORES.get(resultado.group(1), "")
+
+    if cor_atual:
+        print(f"{cor_atual}{linha.rstrip()}{RESET}", flush=True)
     else:
         print(linha.rstrip(), flush=True)
 
@@ -66,4 +86,4 @@ if __name__ == "__main__":
     try:
         monitorar_log(sys.argv[1])
     except KeyboardInterrupt:
-        print(f"\n{Style.RESET_ALL}Monitor de debug encerrado.")
+        print(f"\n{RESET}Monitor de debug encerrado.")
