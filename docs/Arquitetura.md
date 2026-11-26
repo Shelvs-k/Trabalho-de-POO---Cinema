@@ -1,79 +1,34 @@
-# Arquitetura do sistema
+# 🏗️ Arquitetura do Sistema
 
-O programa é uma aplicação de terminal organizada em módulos. O fluxo abaixo descreve o caminho executado pelos menus atuais:
+O Sistema de Cinema foi desenvolvido utilizando Programação Orientada a Objetos (POO) combinado com uma arquitetura modular. O objetivo dessa divisão é garantir a separação de responsabilidades, facilitar a manutenção do código e permitir que o sistema cresça de forma organizada.
 
-```text
-Usuário
-   |
-   v
-src/cinema.py  ───────>  src/música.py
- (menus e execução)       (reprodutor opcional)
-   |
-   v
-src/telas.py
- (operações de cada menu)
-   |                 \
-   v                  v
-src/classes.py    src/persistencia.py
- (regras e modelos)  (leitura e gravação JSON)
-                         |
-                         v
-                    src/dados/
+A arquitetura é dividida em camadas bem definidas, onde cada arquivo possui uma função específica:
 
-src/debug.py ───────> src/debug_monitor.py
- (configura logs)       (acompanha o arquivo de log)
-```
+## Camadas do Sistema
 
-## Módulos
+### 1. Camada de Apresentação (Interface de Usuário)
+*   **Arquivo:** `cinema.py`
+*   **Responsabilidade:** Gerencia a interface do sistema, exibe menus interativos, limpeza do terminal e captura as interações do usuário. Também inicializa recursos de áudio e gerencia os logs do sistema. Se uma ação de menu falhar de forma inesperada, o erro é exibido e registrado, e o sistema volta ao menu.
 
-### `src/cinema.py` — entrada e menus
+### 2. Camada de Controle
+*   **Arquivo:** `telas.py`
+*   **Responsabilidade:** Responsável por gerenciar o sistema. Contém as funções chamadas pelos menus: perguntam os dados, usam as classes para validar as regras e administram o CRUD do sistema, pedindo à camada de persistência que guarde ou recupere os registros.
 
-É o ponto de entrada executado por `python src/cinema.py`. Apresenta o menu principal e os menus de Filmes, Salas, Sessões, Clientes e Ingressos; encaminha cada escolha para a função correspondente de `telas.py`. Também permite abrir o reprodutor de música e ativar o modo de depuração digitando `debug` no menu inicial.
+### 3. Camada de Modelos 
+*   **Arquivos:** `filmes.py`, `sala.py`, `sessao.py`, `clientes.py` e `ingresso.py`, um módulo por entidade, cada um desenvolvido pela equipe responsável e mantido separado dos demais.
+*   **Responsabilidade:** Define as estruturas do sistema (`Filme`, `Sala`, `Sessao`, `Cliente` e `Ingresso`). Serve para padronizar como os dados agem entre as camadas antes de serem convertidos para o formato JSON. As regras de negócio da venda (idade mínima, assento ocupado, sessão disponível) ficam em `Ingresso`, não em `telas.py`. `filmes.py` e `ingresso.py` também trazem `GerenciadorFilmes` e `GerenciadorIngressos`, coleções em memória que o fluxo atual não usa, já que os registros ficam nos arquivos JSON. A única dependência entre modelos é `ingresso.py` importando `StatusSessao` de `sessao.py`.
 
-Ao iniciar, tenta registrar `Alt+H+P` para tocar `src/secrets/Ultra_Secret.mp3` e `Alt+H+S` para interromper essa reprodução. A integração com `keyboard` é opcional: se a biblioteca ou as permissões necessárias não estiverem disponíveis, os atalhos são desativados.
+### 4. Camada de Persistência
+*   **Arquivo:** `persistencia.py` e a pasta `dados/`.
+*   **Responsabilidade:** Responsável pela leitura e escrita de arquivos `.json`. Cada registro é salvo individualmente (`ID - Nome.json`) organizando em diretórios específicos por entidade. 
 
-### `src/telas.py` — operações e interação
+### 5. Serviços Auxiliares
+*   **Arquivos:** `debug.py`, `debug_monitor.py` e `música.py`
+*   **Responsabilidade:** Fornecem serviços auxiliares ao sistema, como o monitoramento de logs com uso de cores no terminal, além de possuir um recurso extra de reprodutor de áudio.
 
-Implementa as ações invocadas pelos menus: solicita os dados no terminal, valida entradas, cria ou reconstrói objetos de domínio e chama a persistência. As operações disponíveis são:
+## Observações de integração
 
-| Categoria | Operações no menu |
-| --- | --- |
-| Filmes | Cadastrar, listar, consultar informações e excluir |
-| Salas | Cadastrar, listar, consultar informações e excluir |
-| Sessões | Cadastrar, listar, consultar disponibilidade e informações, editar e excluir |
-| Clientes | Cadastrar, listar, consultar informações, ver histórico, editar e excluir |
-| Ingressos | Emitir, listar, consultar informações e cancelar |
+As classes `Sessao` e `Ingresso` não possuem métodos para salvar nem carregar dados, e geram o próprio ID por um contador em memória que volta a 1 a cada execução. Por isso:
 
-Uma exceção inesperada durante uma ação é exibida no terminal e registrada quando o debug está ativo; o menu continua disponível.
-
-### `src/classes.py` — modelos e regras de domínio
-
-Define `Filme`, `Sala`, `Sessao`, `Cliente` e `Ingresso`, assim como os enums de classificação indicativa, tipo e status da sessão e tipo de ingresso. As classes validam, entre outras condições, os valores de sessão, a capacidade e numeração dos assentos, a classificação etária do cliente, a disponibilidade para venda e a liberação de assento no cancelamento.
-
-O arquivo também contém `GerenciadorFilmes` e `GerenciadorIngressos`, que mantêm coleções em memória. Os menus e as telas da versão atual não usam esses gerenciadores: os registros são consultados nos arquivos JSON. `Sessao` e `Ingresso` mantêm contadores de ID em memória, alinhados por `telas.py` com os arquivos existentes antes de criar um novo objeto.
-
-### `src/persistencia.py` — arquivos JSON
-
-Define os diretórios de cada entidade em `src/dados/`, localiza arquivos, escolhe IDs livres, lê e grava registros e converte sessões e ingressos entre objetos e dicionários. Cada gravação passa por um arquivo temporário e substituição do destino para evitar deixar um JSON parcialmente escrito.
-
-Para reconstruir uma `Sessao` ou um `Ingresso` existente, as funções de carregamento montam o objeto sem executar o fluxo de criação/venda novamente. Elas preenchem atributos internos das classes; portanto, alterações nesses atributos precisam ser refletidas no módulo de persistência.
-
-O processo de emissão e cancelamento atualiza mais de um JSON em sequência (ingresso, sessão e cliente). A gravação individual é protegida, mas o conjunto dessas atualizações não é uma transação única.
-
-### `src/música.py` — reprodutor
-
-Apresenta um menu de reprodução acessível pela opção **M**. Procura recursivamente arquivos `.mp3`, `.wav`, `.flac`, `.aac` e `.ogg` em `src/music/`; essa pasta é criada quando o reprodutor é aberto. A biblioteca `pygame` inicializa e controla o áudio.
-
-### `src/debug.py` e `src/debug_monitor.py` — logs
-
-O modo de depuração é ativado pela opção textual `debug` no menu inicial. Os arquivos de log são criados em `src/logs/`, com registros desde `DEBUG`; o terminal principal apresenta a partir de `INFO`. No Windows, `debug.py` tenta abrir uma nova janela para acompanhar o arquivo em tempo real usando `debug_monitor.py`. Nos demais sistemas, o logger informa que a abertura automática do monitor está configurada apenas para Windows.
-
-`colorama` é usada para auxiliar na exibição de cores; o código possui alternativas para continuar sem ela.
-
-## Visão das dependências
-
-- `cinema.py` importa as ações de `telas.py` e os serviços de áudio, debug e atalhos.
-- `telas.py` usa `classes.py` para regras e objetos e `persistencia.py` para os dados.
-- `persistencia.py` também usa as classes para reconstruir objetos vinculados a registros existentes.
-- `debug.py` fornece o logger que os demais módulos consultam quando o modo debug está ativo.
-
+*   o `telas.py` alinha o contador (`Sessao._proximo_id` e `Ingresso._proximo_id`) com os arquivos existentes em disco antes de criar cada objeto;
+*   o `persistencia.py` reconstrói sessões e ingressos salvos por `sessao_from_dict` e `ingresso_from_dict`, que usam `__new__` e atributos internos das classes (`_Sessao__id_sessao`, `_Ingresso__id` e outros). Se as equipes renomearem esses atributos, o carregamento precisa ser ajustado.
