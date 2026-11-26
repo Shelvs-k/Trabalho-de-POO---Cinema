@@ -12,10 +12,9 @@ from datetime import datetime
 from pathlib import Path
 
 import debug
-from classes import (
-    Filme, Ingresso, Sessao,
-    ClassificacaoIndicativa, TipoSessao, StatusSessao, TipoIngresso,
-)
+from filmes import Filme, ClassificacaoIndicativa
+from sessao import Sessao, TipoSessao, StatusSessao
+from ingresso import Ingresso, TipoIngresso
 
 
 def registrar_log(nivel, mensagem):

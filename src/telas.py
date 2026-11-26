@@ -8,11 +8,11 @@ import io
 import math
 from datetime import datetime
 
-from classes import (
-    Filme, Sala, Sessao, Cliente, Ingresso,
-    ClassificacaoIndicativa,
-    TipoSessao, StatusSessao, TipoIngresso,
-)
+from filmes import Filme, ClassificacaoIndicativa
+from sala import Sala
+from sessao import Sessao, TipoSessao, StatusSessao
+from clientes import Cliente
+from ingresso import Ingresso, TipoIngresso
 from persistencia import (
     registrar_log,
     filme_bucket, sala_bucket, cliente_bucket, sessao_bucket, ingresso_bucket,
